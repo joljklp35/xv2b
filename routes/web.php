@@ -4,9 +4,11 @@ use App\Services\ThemeService;
 use Illuminate\Http\Request;
 
 Route::get('/' . config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))), function (Request $request) {
+    $host = $request->header('x-forwarded-host', $request->server('HTTP_HOST'));
     if ($wh = config('v2board.whitehost')) {
-        if (!in_array(strtolower($request->server('HTTP_HOST')), array_map('strtolower', explode(',', $wh)))) {
-            Log::warning('非法访问：' . $request->server('HTTP_HOST'));
+        $whitelist = array_map('strtolower', explode(',', $wh));
+        if (!in_array(strtolower($host), $whitelist)) {
+            Log::warning('非法访问：' . $host);
             abort(403);
         }
     }
