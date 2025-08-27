@@ -101,6 +101,7 @@ class ConfigController extends Controller
                 'app_name' => config('v2board.app_name', 'V2Board'),
                 'app_description' => config('v2board.app_description', 'V2Board is best!'),
                 'app_url' => config('v2board.app_url'),
+                'whitehost' => config('v2board.whitehost'),
                 'subscribe_url' => config('v2board.subscribe_url'),
                 'subscribe_path' => config('v2board.subscribe_path'),
                 'ua_rule' => config('v2board.ua_rule'),

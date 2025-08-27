@@ -37,6 +37,7 @@ class ConfigSave extends FormRequest
         'app_name' => '',
         'app_description' => '',
         'app_url' => 'nullable|url',
+        'whitehost' => 'nullable|url',
         'subscribe_url' => 'nullable',
         'ua_rule' => 'nullable',
         'subscribe_path' => 'nullable|regex:/^\\//',
