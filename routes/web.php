@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 Route::get('/' . config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))), function (Request $request) {
     if ($wh = config('v2board.whitehost')) {
         if (!in_array(strtolower($request->server('HTTP_HOST')), array_map('strtolower', explode(',', $wh)))) {
+            Log::warning('非法访问：' . $request->server('HTTP_HOST'));
             abort(403);
         }
     }
