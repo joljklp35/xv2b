@@ -3,18 +3,12 @@
 use App\Services\ThemeService;
 use Illuminate\Http\Request;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register web routes for your application. These
-| routes are loaded by the RouteServiceProvider within a group which
-| contains the "web" middleware group. Now create something great!
-|
-*/
-
 Route::get('/' . config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))), function () {
+    if ($wh = config('v2board.whitehost')) {
+        if (!in_array(strtolower($request->server('HTTP_HOST')), array_map('strtolower', explode(',', $wh)))) {
+            abort(403);
+        }
+    }
     return view('admin', [
         'title' => config('v2board.app_name', 'V2Board'),
         'theme_sidebar' => config('v2board.frontend_theme_sidebar', 'light'),
