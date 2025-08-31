@@ -18,7 +18,7 @@ class Checkin extends Telegram
     {
         $telegramService = $this->telegramService;
         if (!isset($message->from) || !isset($message->from->id)) {
-            $telegramService->sendMessage($message->chat_id, '无法识别用户信息', 'markdown');
+            $telegramService->sendMessage($message->chat_id, '无法识别用户信息', 'markdown',30);
             return;
         }
 
@@ -27,7 +27,7 @@ class Checkin extends Telegram
         $user = User::where('telegram_id', $telegramId)->first();
 
         if (!$user) {
-            $telegramService->sendMessage($message->chat_id, '没有查询到您的用户信息，请先绑定账号', 'markdown');
+            $telegramService->sendMessage($message->chat_id, '没有查询到您的用户信息，请先绑定账号', 'markdown',30);
             return;
         }
 
@@ -38,7 +38,7 @@ class Checkin extends Telegram
         $cacheKey = 'checkin:' . $telegramId . $dateStr;
 
         if (Cache::has($cacheKey)) {
-            $telegramService->sendMessage($message->chat_id, "{$mention}，您今天已经签到过了，明天再来吧！", 'markdown');
+            $telegramService->sendMessage($message->chat_id, "{$mention}，您今天已经签到过了，明天再来吧！", 'markdown',30);
             return;
         }
 
@@ -50,6 +50,6 @@ class Checkin extends Telegram
 
         $rewardHuman = Helper::trafficConvert($rewardBytes);
 
-        $telegramService->sendMessage($message->chat_id, "{$mention}，签到成功！您获得了 {$rewardHuman} 流量奖励，继续加油哦！", 'markdown');
+        $telegramService->sendMessage($message->chat_id, "{$mention}，签到成功！您获得了 {$rewardHuman} 流量奖励，继续加油哦！", 'markdown',30);
     }
 }
