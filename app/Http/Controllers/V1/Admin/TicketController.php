@@ -16,48 +16,78 @@ class TicketController extends Controller
     public function fetch(Request $request)
     {
         if ($request->input('id')) {
-            $ticket = Ticket::where('id', $request->input('id'))
-                ->first();
+            $ticket = Ticket::where('id', $request->input('id'))->first();
             if (!$ticket) {
                 abort(500, '工单不存在');
             }
             $ticket['message'] = TicketMessage::where('ticket_id', $ticket->id)->get();
-            for ($i = 0; $i < count($ticket['message']); $i++) {
-                if ($ticket['message'][$i]['user_id'] !== $ticket->user_id) {
-                    $ticket['message'][$i]['is_me'] = true;
-                } else {
-                    $ticket['message'][$i]['is_me'] = false;
-                }
+            foreach ($ticket['message'] as $msg) {
+                $msg['is_me'] = $msg['user_id'] !== $ticket->user_id;
             }
+    
+            // 映射返回的 status
+            if ($ticket->status == 1) {
+                $ticket->status = 2; // 已关闭
+            } elseif ($ticket->status == 0 && $ticket->reply_status == 1) {
+                $ticket->status = 1; // 已回复
+            } else {
+                $ticket->status = 0; // 待回复
+            }
+    
             return response([
                 'data' => $ticket
             ]);
         }
-        $current = $request->input('current') ? $request->input('current') : 1;
+    
+        $current = $request->input('current') ?: 1;
         $pageSize = $request->input('pageSize') >= 10 ? $request->input('pageSize') : 10;
+    
         $model = Ticket::orderBy('updated_at', 'DESC');
-        if ($request->input('status') !== NULL) {
-            if ((int)$request->input('status') === -1) {
-                $model->where('status', 0)->where('reply_status', 0);
-            } else {
-                $model->where('status',$request->input('status'));
+    
+        // 前端传参 status=0/1/2 -> 数据库条件映射
+        if ($request->input('status') !== null) {
+            switch ((int)$request->input('status')) {
+                case 0: // 待回复
+                    $model->where('status', 0)->where('reply_status', 0);
+                    break;
+                case 1: // 已回复
+                    $model->where('status', 0)->where('reply_status', 1);
+                    break;
+                case 2: // 已关闭
+                    $model->where('status', 1);
+                    break;
             }
         }
-        if ($request->input('reply_status') !== NULL) {
+    
+        if ($request->input('reply_status') !== null) {
             $model->whereIn('reply_status', $request->input('reply_status'));
         }
-        if ($request->input('email') !== NULL) {
+    
+        if ($request->input('email') !== null) {
             $user = User::where('email', $request->input('email'))->first();
             if ($user) $model->where('user_id', $user->id);
         }
+    
         $total = $model->count();
-        $res = $model->forPage($current, $pageSize)
-            ->get();
+        $res = $model->forPage($current, $pageSize)->get();
+    
+        // 映射返回的 status
+        foreach ($res as $ticket) {
+            if ($ticket->status == 1) {
+                $ticket->status = 2; // 已关闭
+            } elseif ($ticket->status == 0 && $ticket->reply_status == 1) {
+                $ticket->status = 1; // 已回复
+            } else {
+                $ticket->status = 0; // 待回复
+            }
+        }
+    
         return response([
             'data' => $res,
             'total' => $total
         ]);
     }
+    
 
     public function reply(Request $request)
     {
