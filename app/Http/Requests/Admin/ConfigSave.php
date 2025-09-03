@@ -40,6 +40,7 @@ class ConfigSave extends FormRequest
         'whitehost' => 'nullable',
         'subscribe_url' => 'nullable',
         'ua_rule' => 'nullable',
+        'plan_rule' => 'nullable',
         'subscribe_path' => 'nullable|regex:/^\\//',
         'try_out_enable' => 'in:0,1',
         'try_out_plan_id' => 'integer',
