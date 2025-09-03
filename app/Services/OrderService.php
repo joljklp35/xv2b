@@ -463,36 +463,23 @@ class OrderService
         }
         try {
             DB::transaction(function () use ($user, $rewardPlan, $inviterCurrentPlan, $inviter) {
-                // 初始化时间
                 $currentTime = time();
-                if ($inviter->expired_at === null || $inviter->expired_at < $currentTime) {
-                    $inviter->expired_at = $currentTime;
-                }
-
-                // 计算奖励套餐的月均价值
                 $rewardMonthlyValue = $this->getMonthlyValue($rewardPlan);
-
-                // 计算邀请人当前套餐的月均价值
                 $inviterMonthlyValue = $this->getMonthlyValue($inviterCurrentPlan);
-
-                // 计算套餐价值比例：奖励套餐月均价值 / 邀请人套餐月均价值
                 $priceRatio = $rewardMonthlyValue / $inviterMonthlyValue;
-
-                // 配置的赠送小时数
                 $configHours = (int) config('v2board.complimentary_package_duration', 0);
-
-                // 根据价值比例折算实际赠送时间
                 $adjustedHours = $configHours * $priceRatio;
-                $add_seconds = $adjustedHours * 3600; // 转换为秒
-
-                // 更新邀请人到期时间
-                $inviter->expired_at = $inviter->expired_at + $add_seconds;
-
-                // 将秒数转换为天数（用于显示）
+                $add_seconds = $adjustedHours * 3600;
+                // 仅在邀请人非无限期时才更新 expired_at
+                if ($inviter->expired_at !== null) {
+                    if ($inviter->expired_at < $currentTime) {
+                        $inviter->expired_at = $currentTime;
+                    }
+                    $inviter->expired_at += $add_seconds;
+                }
+                // 记录赠送订单
                 $calculated_days = $add_seconds / 86400;
                 $formatted_days = number_format($calculated_days, 2, '.', '');
-
-                // 创建赠送订单
                 $order = new Order();
                 $orderService = new OrderService($order);
                 $order->user_id = $inviter->id;
