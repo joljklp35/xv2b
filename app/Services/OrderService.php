@@ -470,14 +470,13 @@ class OrderService
                 $configHours = (int) config('v2board.complimentary_package_duration', 0);
                 $adjustedHours = $configHours * $priceRatio;
                 $add_seconds = $adjustedHours * 3600;
-                // 仅在邀请人非无限期时才更新 expired_at
+
                 if ($inviter->expired_at !== null) {
                     if ($inviter->expired_at < $currentTime) {
                         $inviter->expired_at = $currentTime;
                     }
                     $inviter->expired_at += $add_seconds;
                 }
-                // 记录赠送订单
                 $calculated_days = $add_seconds / 86400;
                 $formatted_days = number_format($calculated_days, 2, '.', '');
                 $order = new Order();
