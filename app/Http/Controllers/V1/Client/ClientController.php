@@ -42,7 +42,7 @@ class ClientController extends Controller
             'created_at' => now()
         ]);
         $userAgent = strtolower($request->userAgent() ?? '');
-        $blockedKeywords = ["mail", "qq", "wechat"];
+        $blockedKeywords = ["mail", "qq", "wechat", "ding"];
         foreach ($blockedKeywords as $keyword) {
             if (strpos($userAgent, $keyword) !== false) {
                 \Log::warning("检测到非法访问关键字: {$keyword}, 用户ID: {$user->id}, UserAgent: {$userAgent}");
@@ -58,6 +58,7 @@ class ClientController extends Controller
             $servers = $serverService->getAvailableServers($user);
             $servers = $this->filterServers($servers, $request);
             $this->replaceServerHostByUaRule($servers, $request->userAgent() ?? '');
+            $this->replaceServerHostByPlanRule($servers, $user);
             $servers = array_values($servers);
             if ($flag) {
                 if (!strpos($flag, 'sing')) {
@@ -191,16 +192,16 @@ class ClientController extends Controller
         }
         return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     }
-    private function getLocationFromIp(string $ip): array 
+    private function getLocationFromIp(string $ip): array
     {
         // IP格式验证
         if (!filter_var($ip, FILTER_VALIDATE_IP)) {
             \Log::warning("无效IP地址", ['ip' => $ip]);
             return $this->getEmptyLocation();
         }
-        
+
         $cacheKey = "IP_GEO_DATA:{$ip}";  // 与第一个函数使用相同的缓存键
-        
+
         // 尝试从缓存获取
         try {
             $cached = Cache::get($cacheKey);
@@ -217,13 +218,13 @@ class ClientController extends Controller
         } catch (\Exception $e) {
             \Log::warning("缓存读取失败", ['ip' => $ip, 'error' => $e->getMessage()]);
         }
-        
+
         // 请求外部API
         try {
             $response = Http::timeout(5)
                 ->retry(2, 1000)
                 ->get("https://ip.bt3.one/{$ip}");
-                
+
             if (!$response->successful()) {
                 \Log::warning("IP归属地API请求失败", [
                     'ip' => $ip,
@@ -233,20 +234,20 @@ class ClientController extends Controller
                 Cache::put($cacheKey, [], 5);
                 return $this->getEmptyLocation();
             }
-            
+
             $data = $response->json();
             if (!is_array($data)) {
                 \Log::warning("IP归属地API返回数据格式错误", ['ip' => $ip]);
                 Cache::put($cacheKey, [], 5);
                 return $this->getEmptyLocation();
             }
-            
+
             // 缓存API原始数据24小时
             Cache::put($cacheKey, $data, 1440);
-            
+
             // 解析并返回标准化数据
             return $this->parseLocationData($data);
-            
+
         } catch (\Exception $e) {
             \Log::error("IP归属地获取异常", [
                 'ip' => $ip,
@@ -258,19 +259,19 @@ class ClientController extends Controller
             return $this->getEmptyLocation();
         }
     }
-    
+
     private function parseLocationData(array $data): array
     {
         return [
             'as' => $data['as']['number'] ?? null,
             'isp' => $data['as']['name'] ?? null,
             'country' => $data['country']['name'] ?? null,
-            'city' => !empty($data['regions']) 
-                ? implode(', ', array_filter($data['regions'])) 
+            'city' => !empty($data['regions'])
+                ? implode(', ', array_filter($data['regions']))
                 : null,
         ];
     }
-        
+
     private function getEmptyLocation(): array
     {
         return [
@@ -305,6 +306,41 @@ class ClientController extends Controller
                     }
                 }
                 break;
+            }
+        }
+    }
+    private function replaceServerHostByPlanRule(array &$servers, $user)
+    {
+        $planRules = config('v2board.plan_rule', '');
+        $planRules = str_replace(["\r", "\n"], '', $planRules); // 移除换行符
+        $planRuleLines = explode(';', $planRules); // 分号分割
+
+        $planName = '';
+        if ($user->plan_id) {
+            $plan = Plan::find($user->plan_id);
+            if ($plan) {
+                $planName = strtolower($plan->name);
+            }
+        }
+
+        foreach ($planRuleLines as $line) {
+            $parts = array_map('trim', explode(',', $line));
+            if (count($parts) !== 3) {
+                continue;
+            }
+
+            [$planKeyword, $nameKeyword, $newHost] = $parts;
+
+            // 判断套餐名是否匹配
+            if ($planName && strpos($planName, strtolower($planKeyword)) !== false) {
+                foreach ($servers as &$server) {
+                    // 判断节点名是否匹配
+                    if (isset($server['name']) && stripos($server['name'], $nameKeyword) !== false) {
+                        if (isset($server['host'])) {
+                            $server['host'] = $newHost;
+                        }
+                    }
+                }
             }
         }
     }
