@@ -32,7 +32,7 @@ return [
     |
     */
 
-    'path' => config('v2board.horizon_path', hash('crc32b', config('app.key') . 'horizon')),
+    'path' => config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))),
 
     /*
     |--------------------------------------------------------------------------
