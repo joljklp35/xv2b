@@ -8,9 +8,9 @@ use Exception;
 
 class EmailRateLimit
 {
-    protected int $minuteLimit = 15; // 每分钟最大任务数
-    protected int $hourLimit = 1000; // 每小时最大任务数
-    protected int $randomBuffer = 5; // 随机延迟缓冲秒数
+    protected int $minuteLimit = 60;
+    protected int $hourLimit = 3000;
+    protected int $randomBuffer = 5;
 
     public function handle($job, $next)
     {
@@ -23,14 +23,12 @@ class EmailRateLimit
                 return $next($job);
             }
 
-            // 分配未来时间槽
             $nextSlot = $this->allocateFutureSlotLua(
                 $queueName,
                 intval($now->format('YmdHi')),
                 intval($now->format('YmdH'))
             );
 
-            // 确保返回值 >= 当前分钟
             $currentSlot = intval($now->format('YmdHi'));
             if ($nextSlot < $currentSlot) {
                 $nextSlot = $this->getNextValidSlot($currentSlot);
@@ -48,14 +46,10 @@ class EmailRateLimit
                 'job' => get_class($job),
                 'queue' => $job->queue ?? 'default'
             ]);
-            // 发生错误时允许任务继续执行，避免阻塞
             return $next($job);
         }
     }
 
-    /**
-     * 检查并更新限流计数器
-     */
     protected function checkAndUpdateRateLimit(string $queueName, CarbonImmutable $now): bool
     {
         $currentMinuteKey = $this->getCurrentMinuteKey($queueName, $now);
@@ -65,22 +59,16 @@ class EmailRateLimit
         $minuteCount = Redis::incr($currentMinuteKey);
         $hourCount = Redis::incr($currentHourKey);
 
-        // 设置过期时间 - 保留2个周期
-        // 当前分钟key：保留2分钟（当前分钟 + 下一分钟）
-        $minuteExpiry = 120 - $now->second; // 2分钟减去当前秒数
-        // 当前小时key：保留2小时（当前小时 + 下一小时）
-        $hourExpiry = 7200 - ($now->minute * 60 + $now->second); // 2小时减去已过去的时间
+        $minuteExpiry = 120 - $now->second; 
+
+        $hourExpiry = 7200 - ($now->minute * 60 + $now->second);
 
         Redis::expire($currentMinuteKey, max(1, $minuteExpiry));
         Redis::expire($currentHourKey, max(1, $hourExpiry));
 
-        // 当前分钟/小时未超限，可以执行任务
         return ($minuteCount <= $this->minuteLimit && $hourCount <= $this->hourLimit);
     }
 
-    /**
-     * 获取下一个有效的时间槽（处理分钟进位）
-     */
     protected function getNextValidSlot(int $currentSlot): int
     {
         $year = intval(substr($currentSlot, 0, 4));
@@ -89,7 +77,6 @@ class EmailRateLimit
         $hour = intval(substr($currentSlot, 8, 2));
         $minute = intval(substr($currentSlot, 10, 2));
 
-        // 创建当前时间对象并加1分钟
         $currentTime = CarbonImmutable::createFromFormat('Y-m-d H:i:s',
             sprintf('%04d-%02d-%02d %02d:%02d:00', $year, $month, $day, $hour, $minute)
         );
@@ -108,7 +95,7 @@ class EmailRateLimit
         try {
             $nextSlot = intval(Redis::eval(
                 $luaScript,
-                3, // Number of keys
+                3,
                 $nextSlotKey,
                 $futureMinuteBaseKey,
                 $futureHourBaseKey,
@@ -124,9 +111,6 @@ class EmailRateLimit
         }
     }
 
-    /**
-     * 获取未来时间槽分配的Lua脚本
-     */
     protected function getFutureSlotAllocationScript(): string
     {
         return '
@@ -322,9 +306,6 @@ end
 ';
     }
 
-    /**
-     * 生成Redis key的辅助方法
-     */
     protected function getCurrentMinuteKey(string $queueName, CarbonImmutable $now): string
     {
         return "rate_limit:{$queueName}:current_minute:" . $now->format('YmdHi');
