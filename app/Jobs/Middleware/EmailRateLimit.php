@@ -20,7 +20,7 @@ class EmailRateLimit
             $queueName = $job->queue ?? 'default';
             $now = CarbonImmutable::now();
 
-            // 检查并更新当前分钟和小时的限流
+
             $canExecute = $this->checkAndUpdateRateLimit($queueName, $now);
 
             if ($canExecute) {
@@ -43,8 +43,8 @@ class EmailRateLimit
             $slotTime = CarbonImmutable::createFromFormat('YmdHi', strval($nextSlot));
             $delaySeconds = max(1, $slotTime->timestamp - $now->timestamp + rand(0, $this->randomBuffer));
 
-            // 使用 release 延迟重新执行当前任务
-            $job->release($delaySeconds);
+            dispatch(new SendEmailJob($job->getParams(), $queueName))->delay($now->addSeconds($delaySeconds));
+            $job->delete();
 
         } catch (Exception $e) {
             Log::error('邮件限流中间件错误', [
@@ -195,18 +195,18 @@ class EmailRateLimit
                 })
             end
             
-            -- 获取或初始化下一个可用槽位
-            local next_slot = redis.call("GET", next_slot_key)
-            if not next_slot then
-                next_slot = get_next_valid_slot(current_slot)
-            else
-                next_slot = tonumber(next_slot)
-            end
+            -- 获取存储的下一个槽位指针和计算的下一个槽位，取较近的那个
+            local stored_next_slot = redis.call("GET", next_slot_key)
+            local calculated_next_slot = get_next_valid_slot(current_slot)
             
-            -- 确保不会分配过去的时间槽
-            if next_slot <= current_slot then
-                next_slot = get_next_valid_slot(current_slot)
-            end
+            local next_slot
+            if not stored_next_slot then
+                next_slot = calculated_next_slot
+            else
+                stored_next_slot = tonumber(stored_next_slot)
+                -- 优先使用较近的时间槽，但不能是过去的时间
+                if stored_next_slot <= current_slot then
+                    next_slot = calculated_next_slot
             
             -- 搜索下一个可用槽位
             local search_start = next_slot
