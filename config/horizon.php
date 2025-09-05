@@ -32,8 +32,8 @@ return [
     |
     */
 
-    'path' => config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))),
-
+    'path' => 'path' => config('v2board.secure_path',config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))) . '/horizon',
+    
     /*
     |--------------------------------------------------------------------------
     | Horizon Redis Connection
