@@ -8,8 +8,8 @@ use Exception;
 
 class EmailRateLimit
 {
-    protected int $minuteLimit = 60; // 每分钟最大任务数
-    protected int $hourLimit = 3600; // 每小时最大任务数
+    protected int $minuteLimit = 15; // 每分钟最大任务数
+    protected int $hourLimit = 1000; // 每小时最大任务数
     protected int $randomBuffer = 5; // 随机延迟缓冲秒数
 
     public function handle($job, $next)
