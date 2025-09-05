@@ -32,7 +32,7 @@ return [
     |
     */
 
-    'path' => 'monitor',
+    'path' => config('v2board.horizon_path', hash('crc32b', config('app.key') . 'horizon')),
 
     /*
     |--------------------------------------------------------------------------
