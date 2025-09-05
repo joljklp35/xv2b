@@ -108,13 +108,18 @@ class EmailRateLimit
         $nextSlotKey = "rate_limit:{$queueName}:next_slot";
         $futureMinuteBaseKey = "rate_limit:{$queueName}:future_minute:";
         $futureHourBaseKey = "rate_limit:{$queueName}:future_hour:";
-
+    
         $luaScript = $this->getFutureSlotAllocationScript();
-
+    
         try {
+            // Redis::eval 参数说明：
+            // 1. Lua 脚本
+            // 2. KEYS 数量
+            // 3. KEYS...
+            // 4. ARGV...
             $nextSlot = intval(Redis::eval(
                 $luaScript,
-                3, // Number of keys
+                3, // Number of KEYS
                 $nextSlotKey,
                 $futureMinuteBaseKey,
                 $futureHourBaseKey,
@@ -123,140 +128,115 @@ class EmailRateLimit
                 $currentSlot,
                 $currentHour
             ));
-
+    
             return $nextSlot;
         } catch (Exception $e) {
             Log::error('Lua脚本执行失败', ['error' => $e->getMessage()]);
             return $this->getNextValidSlot($currentSlot);
         }
     }
+    
 
     /**
      * 获取未来时间槽分配的Lua脚本
      */
-    protected function getFutureSlotAllocationScript(): string
-    {
-        return '
-            local next_slot_key = KEYS[1]
-            local future_minute_base = KEYS[2]
-            local future_hour_base = KEYS[3]
-            
-            local minute_limit = tonumber(ARGV[1])
-            local hour_limit = tonumber(ARGV[2])
-            local current_slot = tonumber(ARGV[3])
-            local current_hour = tonumber(ARGV[4])
-            
-            -- 辅助函数：获取下一个有效时间槽（处理分钟进位）
-            local function get_next_valid_slot(slot)
-                local year = math.floor(slot / 100000000)
-                local month = math.floor((slot % 100000000) / 1000000)
-                local day = math.floor((slot % 1000000) / 10000)
-                local hour = math.floor((slot % 10000) / 100)
-                local minute = slot % 100
     
-                -- 分钟+1
-                minute = minute + 1
-                if minute >= 60 then
-                    minute = 0
-                    hour = hour + 1
-                    if hour >= 24 then
-                        hour = 0
-                        day = day + 1
-                        -- 简化处理月份天数
-                        if day > 31 then
-                            day = 1
-                            month = month + 1
-                            if month > 12 then
-                                month = 1
-                                year = year + 1
-                            end
-                        end
-                    end
-                end
-    
-                return year * 100000000 + month * 1000000 + day * 10000 + hour * 100 + minute
-            end
-    
-            -- 辅助函数：计算时间戳
-            local function calculate_timestamp(slot)
-                local year = math.floor(slot / 100000000)
-                local month = math.floor((slot % 100000000) / 1000000)
-                local day = math.floor((slot % 1000000) / 10000)
-                local hour = math.floor((slot % 10000) / 100)
-                local minute = slot % 100
-    
-                return os.time({
-                    year = year,
-                    month = month,
-                    day = day,
-                    hour = hour,
-                    min = minute,
-                    sec = 0
-                })
-            end
-    
-            -- 获取存储的下一个槽位指针和计算的下一个槽位
-            local stored_next_slot = redis.call("GET", next_slot_key)
-            local calculated_next_slot = get_next_valid_slot(current_slot)
-    
-            local next_slot
-            if not stored_next_slot then
-                -- 如果 next_slot 不存在，初始化
-                next_slot = calculated_next_slot
-                redis.call("SETEX", next_slot_key, 3600, next_slot)  -- 设置过期1小时
-            else
-                stored_next_slot = tonumber(stored_next_slot)
-                if stored_next_slot <= current_slot then
-                    next_slot = calculated_next_slot
-                else
-                    next_slot = stored_next_slot
-                end
-            end
-    
-            -- 搜索下一个可用槽位
-            local search_count = 0
-            while search_count < 120 do
-                local minute_key = future_minute_base .. next_slot
-                local hour_key = future_hour_base .. math.floor(next_slot / 100)
-    
-                local minute_count = tonumber(redis.call("GET", minute_key) or "0")
-                local hour_count = tonumber(redis.call("GET", hour_key) or "0")
-    
-                if minute_count < minute_limit and hour_count < hour_limit then
-                    local new_minute_count = redis.call("INCR", minute_key)
-                    local new_hour_count = redis.call("INCR", hour_key)
-    
-                    local slot_timestamp = calculate_timestamp(next_slot)
-                    local current_time = os.time()
-    
-                    -- 分钟key过期时间：槽位时间 + 2分钟
-                    local ttl_minute = math.max(120, slot_timestamp + 120 - current_time)
-                    redis.call("EXPIRE", minute_key, ttl_minute)
-    
-                    -- 小时key过期时间：槽位小时 + 2小时
-                    local hour_slot = math.floor(next_slot / 100)
-                    local hour_timestamp = calculate_timestamp(hour_slot * 100)
-                    local ttl_hour = math.max(7200, hour_timestamp + 7200 - current_time)
-                    redis.call("EXPIRE", hour_key, ttl_hour)
-    
-                    -- 槽位满了才更新指针
-                    if new_minute_count >= minute_limit or new_hour_count >= hour_limit then
-                        local next_pointer = get_next_valid_slot(next_slot)
-                        redis.call("SETEX", next_slot_key, 3600, next_pointer)
-                    end
-    
-                    return next_slot
-                end
-    
-                next_slot = get_next_valid_slot(next_slot)
-                search_count = search_count + 1
-            end
-    
-            -- 搜索超时返回未来槽位
-            return get_next_valid_slot(current_slot)
-        ';
-    }
-    
+     protected function getFutureSlotAllocationScript(): string
+     {
+         return '
+             local next_slot_key = KEYS[1]
+             local future_minute_base = KEYS[2]
+             local future_hour_base = KEYS[3]
+             
+             local minute_limit = tonumber(ARGV[1])
+             local hour_limit = tonumber(ARGV[2])
+             local current_slot = tonumber(ARGV[3])
+             local current_hour = tonumber(ARGV[4])
+             
+             -- 辅助函数：获取下一个有效时间槽（处理分钟进位）
+             local function get_next_valid_slot(slot)
+                 local year = math.floor(slot / 100000000)
+                 local month = math.floor((slot % 100000000) / 1000000)
+                 local day = math.floor((slot % 1000000) / 10000)
+                 local hour = math.floor((slot % 10000) / 100)
+                 local minute = slot % 100
+     
+                 minute = minute + 1
+                 if minute >= 60 then
+                     minute = 0
+                     hour = hour + 1
+                     if hour >= 24 then
+                         hour = 0
+                         day = day + 1
+                         if day > 31 then day = 1 month = month + 1 end
+                         if month > 12 then month = 1 year = year + 1 end
+                     end
+                 end
+     
+                 return year * 100000000 + month * 1000000 + day * 10000 + hour * 100 + minute
+             end
+     
+             -- 辅助函数：计算时间戳
+             local function calculate_timestamp(slot)
+                 local year = math.floor(slot / 100000000)
+                 local month = math.floor((slot % 100000000) / 1000000)
+                 local day = math.floor((slot % 1000000) / 10000)
+                 local hour = math.floor((slot % 10000) / 100)
+                 local minute = slot % 100
+                 return os.time({year=year, month=month, day=day, hour=hour, min=minute, sec=0})
+             end
+     
+             -- 初始化 next_slot
+             local stored_next_slot = redis.call("GET", next_slot_key)
+             local next_slot = stored_next_slot and tonumber(stored_next_slot) or get_next_valid_slot(current_slot)
+             if next_slot <= current_slot then
+                 next_slot = get_next_valid_slot(current_slot)
+             end
+     
+             local max_search = 120
+             local search_count = 0
+             while search_count < max_search do
+                 local minute_key = future_minute_base .. next_slot
+                 local hour_key = future_hour_base .. math.floor(next_slot / 100)
+     
+                 local minute_count = tonumber(redis.call("GET", minute_key) or "0")
+                 local hour_count = tonumber(redis.call("GET", hour_key) or "0")
+     
+                 if minute_count < minute_limit and hour_count < hour_limit then
+                     local new_minute_count = redis.call("INCR", minute_key)
+                     local new_hour_count = redis.call("INCR", hour_key)
+     
+                     local slot_ts = calculate_timestamp(next_slot)
+                     local now_ts = os.time()
+     
+                     -- 修复TTL：至少2分钟 / 2小时
+                     local ttl_minute = math.max(120, slot_ts + 120 - now_ts)
+                     local ttl_hour = math.max(7200, calculate_timestamp(math.floor(next_slot / 100) * 100) + 7200 - now_ts)
+     
+                     redis.call("EXPIRE", minute_key, ttl_minute)
+                     redis.call("EXPIRE", hour_key, ttl_hour)
+     
+                     -- 如果槽满，更新 next_slot_key
+                     if new_minute_count >= minute_limit or new_hour_count >= hour_limit then
+                         local next_pointer = get_next_valid_slot(next_slot)
+                         redis.call("SETEX", next_slot_key, 3600, next_pointer)
+                     else
+                         -- 保证 next_slot_key 不小于当前槽
+                         redis.call("SETNX", next_slot_key, next_slot)
+                     end
+     
+                     return next_slot
+                 end
+     
+                 next_slot = get_next_valid_slot(next_slot)
+                 search_count = search_count + 1
+             end
+     
+             return get_next_valid_slot(current_slot)
+         ';
+     }
+     
+
     /**
      * 生成Redis key的辅助方法
      */
