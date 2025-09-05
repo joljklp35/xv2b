@@ -57,17 +57,13 @@ class EmailRateLimit
     protected function allocateFutureSlotLua(string $queueName, int $currentSlot, int $currentHour): int
     {
         $nextSlotKey = "rate_limit:{$queueName}:next_slot";
-        $futureMinuteKey = "rate_limit:{$queueName}:future_min:{$currentSlot}";
+        $futureMinuteKey = "rate_limit:{$queueName}:future_minute:{$currentSlot}";
         $futureHourKey   = "rate_limit:{$queueName}:future_hour:{$currentHour}";
 
         $now = CarbonImmutable::now();
-        $ttlMinute = max(1, $now->addMinute()->timestamp - $now->timestamp);
-        $ttlHour   = max(1, $now->addHour()->timestamp - $now->timestamp);
-
-        // Lua 脚本路径
+        $ttlMinute = max(1, $now->addMinutes(2)->timestamp - $now->timestamp);
+        $ttlHour   = max(1, $now->addHours(2)->timestamp - $now->timestamp);
         $luaScript = file_get_contents(app_path('Lua/email_rate_limit.lua'));
-
-        // 调用 Lua 原子脚本
         $nextSlot = intval(Redis::eval(
             $luaScript,
             3,
