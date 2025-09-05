@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Jobs;
-
+use App\Jobs\Middleware\EmailRateLimit;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -42,6 +42,16 @@ class SendEmailJob implements ShouldQueue
     {
         $this->onQueue($queue);
         $this->params = $params;
+    }
+
+    public function getParams(): array
+    {
+        return $this->params;
+    }
+
+    public function middleware()
+    {
+        return [new EmailRateLimit()];
     }
 
     public function handle()
