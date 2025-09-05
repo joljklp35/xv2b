@@ -57,7 +57,7 @@ class EmailRateLimit
     protected function allocateFutureSlotLua(string $queueName, int $currentSlot, int $currentHour): int
     {
         $nextSlotKey = "rate_limit:{$queueName}:next_slot";
-        $futureMinuteKey = "rate_limit:{$queueName}:future_slot:{$currentSlot}";
+        $futureMinuteKey = "rate_limit:{$queueName}:future_min:{$currentSlot}";
         $futureHourKey   = "rate_limit:{$queueName}:future_hour:{$currentHour}";
 
         $now = CarbonImmutable::now();
