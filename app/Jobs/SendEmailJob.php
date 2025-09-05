@@ -29,6 +29,11 @@ class SendEmailJob implements ShouldQueue
         $this->params = $params;
     }
 
+    public function getParams(): array
+    {
+        return $this->params;
+    }
+
     public function middleware()
     {
         return [new EmailRateLimit()];
