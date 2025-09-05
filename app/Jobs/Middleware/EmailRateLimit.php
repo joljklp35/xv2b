@@ -20,14 +20,11 @@ class EmailRateLimit
             $queueName = $job->queue ?? 'default';
             $now = CarbonImmutable::now();
 
-            // 只检查当前分钟/小时是否超限
             if ($this->checkRateLimit($queueName, $now)) {
-                // 执行任务前自增计数
                 $this->incrementCurrentSlot($queueName, $now);
                 return $next($job);
             }
 
-            // 超限则分配未来可用槽
             $nextSlot = $this->allocateFutureSlotLua(
                 $queueName,
                 intval($now->format('YmdHi')),
@@ -55,9 +52,6 @@ class EmailRateLimit
         }
     }
 
-    /**
-     * 检查当前分钟/小时是否超限（不自增）
-     */
     protected function checkRateLimit(string $queueName, CarbonImmutable $now): bool
     {
         $minuteKey = $this->getCurrentMinuteKey($queueName, $now);
@@ -69,9 +63,6 @@ class EmailRateLimit
         return ($minuteCount < $this->minuteLimit && $hourCount < $this->hourLimit);
     }
 
-    /**
-     * 执行任务前自增当前分钟/小时计数
-     */
     protected function incrementCurrentSlot(string $queueName, CarbonImmutable $now)
     {
         $minuteKey = $this->getCurrentMinuteKey($queueName, $now);
@@ -139,154 +130,157 @@ class EmailRateLimit
     protected function getFutureSlotAllocationScript(): string
     {
         return <<<'LUA'
-local next_slot_key = KEYS[1]
-local future_minute_base = KEYS[2]
-local future_hour_base = KEYS[3]
-
-local minute_limit = tonumber(ARGV[1])
-local hour_limit = tonumber(ARGV[2])
-local current_slot = tonumber(ARGV[3])
-local current_hour = tonumber(ARGV[4])
-
-local month_days = {31,28,31,30,31,30,31,31,30,31,30,31}
-
-local function is_leap_year(year)
-    return (year % 4 == 0 and year % 100 ~= 0) or (year % 400 == 0)
-end
-
-local function get_month_days(year, month)
-    if month == 2 and is_leap_year(year) then return 29 end
-    return month_days[month]
-end
-
-local function get_next_valid_slot(slot)
-    local year = math.floor(slot / 100000000)
-    local month = math.floor((slot % 100000000) / 1000000)
-    local day = math.floor((slot % 1000000) / 10000)
-    local hour = math.floor((slot % 10000) / 100)
-    local minute = slot % 100
-
-    minute = minute + 1
-    if minute >= 60 then
-        minute = 0
-        hour = hour + 1
-        if hour >= 24 then
-            hour = 0
-            day = day + 1
-            local max_days = get_month_days(year, month)
-            if day > max_days then
-                day = 1
-                month = month + 1
-                if month > 12 then
-                    month = 1
-                    year = year + 1
+            local next_slot_key = KEYS[1]
+            local future_minute_base = KEYS[2]
+            local future_hour_base = KEYS[3]
+    
+            local minute_limit = tonumber(ARGV[1])
+            local hour_limit = tonumber(ARGV[2])
+            local current_slot = tonumber(ARGV[3])
+            local current_hour = tonumber(ARGV[4])
+    
+            local month_days = {31,28,31,30,31,30,31,31,30,31,30,31}
+    
+            local function is_leap_year(year)
+                return (year % 4 == 0 and year % 100 ~= 0) or (year % 400 == 0)
+            end
+    
+            local function get_month_days(year, month)
+                if month == 2 and is_leap_year(year) then
+                    return 29
+                end
+                return month_days[month]
+            end
+    
+            local function get_next_valid_slot(slot)
+                local year = math.floor(slot / 100000000)
+                local month = math.floor((slot % 100000000) / 1000000)
+                local day = math.floor((slot % 1000000) / 10000)
+                local hour = math.floor((slot % 10000) / 100)
+                local minute = slot % 100
+    
+                minute = minute + 1
+                if minute >= 60 then
+                    minute = 0
+                    hour = hour + 1
+                    if hour >= 24 then
+                        hour = 0
+                        day = day + 1
+                        local max_days = get_month_days(year, month)
+                        if day > max_days then
+                            day = 1
+                            month = month + 1
+                            if month > 12 then
+                                month = 1
+                                year = year + 1
+                            end
+                        end
+                    end
+                end
+    
+                return year * 100000000 + month * 1000000 + day * 10000 + hour * 100 + minute
+            end
+    
+            local function slot_to_minutes(slot)
+                local year = math.floor(slot / 100000000)
+                local month = math.floor((slot % 100000000) / 1000000)
+                local day = math.floor((slot % 1000000) / 10000)
+                local hour = math.floor((slot % 10000) / 100)
+                local minute = slot % 100
+    
+                local days = 0
+                for y = 2025, year - 1 do
+                    days = days + (is_leap_year(y) and 366 or 365)
+                end
+                for m = 1, month - 1 do
+                    days = days + get_month_days(year, m)
+                end
+                days = days + day - 1
+    
+                return days * 1440 + hour * 60 + minute
+            end
+    
+            local stored_next_slot = redis.call("GET", next_slot_key)
+            local next_slot
+    
+            if not stored_next_slot or stored_next_slot == false then
+                next_slot = get_next_valid_slot(current_slot)
+                redis.call("SET", next_slot_key, next_slot)
+                redis.call("EXPIRE", next_slot_key, 7200)
+            else
+                stored_next_slot = tonumber(stored_next_slot)
+                if stored_next_slot <= current_slot then
+                    next_slot = get_next_valid_slot(current_slot)
+                    redis.call("SET", next_slot_key, next_slot)
+                    redis.call("EXPIRE", next_slot_key, 7200)
+                else
+                    next_slot = stored_next_slot
                 end
             end
-        end
-    end
-    return year * 100000000 + month * 1000000 + day * 10000 + hour * 100 + minute
-end
-
-local function slot_to_minutes(slot)
-    local year = math.floor(slot / 100000000)
-    local month = math.floor((slot % 100000000) / 1000000)
-    local day = math.floor((slot % 1000000) / 10000)
-    local hour = math.floor((slot % 10000) / 100)
-    local minute = slot % 100
-
-    local days = 0
-    for y = 2025, year - 1 do
-        days = days + (is_leap_year(y) and 366 or 365)
-    end
-    for m = 1, month - 1 do
-        days = days + get_month_days(year, m)
-    end
-    days = days + day - 1
-    return days * 1440 + hour * 60 + minute
-end
-
-local stored_next_slot = redis.call("GET", next_slot_key)
-local next_slot
-
-if not stored_next_slot or stored_next_slot == false then
-    next_slot = get_next_valid_slot(current_slot)
-    redis.call("SET", next_slot_key, next_slot)
-    redis.call("EXPIRE", next_slot_key, 7200)
-else
-    stored_next_slot = tonumber(stored_next_slot)
-    if stored_next_slot <= current_slot then
-        next_slot = get_next_valid_slot(current_slot)
-        redis.call("SET", next_slot_key, next_slot)
-        redis.call("EXPIRE", next_slot_key, 7200)
-    else
-        next_slot = stored_next_slot
-    end
-end
-
-local search_count = 0
-local found_slot = nil
-local max_search = 240
-
-while search_count < max_search do
-    local minute_key = future_minute_base .. next_slot
-    local hour_slot = math.floor(next_slot / 100)
-    local hour_key = future_hour_base .. hour_slot
-
-    local minute_count = tonumber(redis.call("GET", minute_key) or "0")
-    local hour_count = tonumber(redis.call("GET", hour_key) or "0")
-
-    if minute_count < minute_limit and hour_count < hour_limit then
-        minute_count = redis.call("INCR", minute_key)
-        hour_count = redis.call("INCR", hour_key)
-
-        local slot_minutes = slot_to_minutes(next_slot)
-        local current_minutes = slot_to_minutes(current_slot)
-        local minutes_diff = slot_minutes - current_minutes
-
-        local minute_ttl = math.max(120, (minutes_diff + 2) * 60)
-        redis.call("EXPIRE", minute_key, minute_ttl)
-        local hour_ttl = math.max(7200, (minutes_diff + 120) * 60)
-        redis.call("EXPIRE", hour_key, hour_ttl)
-
-        found_slot = next_slot
-
-        if minute_count >= minute_limit then
-            local new_pointer = get_next_valid_slot(next_slot)
-            redis.call("SET", next_slot_key, new_pointer)
-            redis.call("EXPIRE", next_slot_key, 7200)
-        elseif hour_count >= hour_limit then
-            local next_hour = hour_slot + 1
-            local y = math.floor(next_hour / 1000000)
-            local mh = next_hour % 1000000
-            local m = math.floor(mh / 10000)
-            local h = mh % 10000
-            if h >= 24 then
-                h = 0
-                m = m + 1
-                if m > 12 then
-                    m = 1
-                    y = y + 1
+    
+            local search_count = 0
+            local found_slot = nil
+            local max_search = 240
+    
+            while search_count < max_search do
+                local minute_key = future_minute_base .. next_slot
+                local hour_slot = math.floor(next_slot / 100)
+                local hour_key = future_hour_base .. hour_slot
+    
+                local minute_count = tonumber(redis.call("GET", minute_key) or "0")
+                local hour_count = tonumber(redis.call("GET", hour_key) or "0")
+    
+                if minute_count < minute_limit and hour_count < hour_limit then
+                    minute_count = redis.call("INCR", minute_key)
+                    hour_count = redis.call("INCR", hour_key)
+    
+                    local slot_minutes = slot_to_minutes(next_slot)
+                    local current_minutes = slot_to_minutes(current_slot)
+                    local minutes_diff = slot_minutes - current_minutes
+    
+                    local minute_ttl = math.max(120, (minutes_diff + 2) * 60)
+                    redis.call("EXPIRE", minute_key, minute_ttl)
+                    local hour_ttl = math.max(7200, (minutes_diff + 120) * 60)
+                    redis.call("EXPIRE", hour_key, hour_ttl)
+    
+                    found_slot = next_slot
+    
+                    if minute_count >= minute_limit then
+                        local new_pointer = get_next_valid_slot(next_slot)
+                        redis.call("SET", next_slot_key, new_pointer)
+                        redis.call("EXPIRE", next_slot_key, 7200)
+                    elseif hour_count >= hour_limit then
+                        local next_hour = hour_slot + 1
+                        local y = math.floor(next_hour / 1000000)
+                        local mh = next_hour % 1000000
+                        local m = math.floor(mh / 10000)
+                        local h = mh % 10000
+                        if h >= 24 then
+                            h = 0
+                            m = m + 1
+                            if m > 12 then
+                                m = 1
+                                y = y + 1
+                            end
+                        end
+                        local new_pointer = (y * 1000000 + m * 10000 + h) * 100
+                        redis.call("SET", next_slot_key, new_pointer)
+                        redis.call("EXPIRE", next_slot_key, 7200)
+                    end
+                    break
                 end
+    
+                next_slot = get_next_valid_slot(next_slot)
+                search_count = search_count + 1
             end
-            local new_pointer = y * 1000000 + m * 10000 + h
-            new_pointer = new_pointer * 100
-            redis.call("SET", next_slot_key, new_pointer)
-            redis.call("EXPIRE", next_slot_key, 7200)
-        end
-        break
-    end
-
-    next_slot = get_next_valid_slot(next_slot)
-    search_count = search_count + 1
-end
-
-if found_slot then
-    return found_slot
-else
-    redis.call("SET", next_slot_key, next_slot)
-    redis.call("EXPIRE", next_slot_key, 7200)
-    return next_slot
-end
-LUA;
-    }
+    
+            if found_slot then
+                return found_slot
+            else
+                redis.call("SET", next_slot_key, next_slot)
+                redis.call("EXPIRE", next_slot_key, 7200)
+                return next_slot
+            end
+        LUA;
+    }    
 }
