@@ -77,6 +77,7 @@ class ConfigSave extends FormRequest
         'email_from_address' => '',
         // telegram
         'telegram_bot_enable' => 'in:0,1',
+        'telegram_bot_order_notify' => 'in:0,1',
         'telegram_bot_token' => '',
         'telegram_discuss_id' => '',
         'telegram_channel_id' => '',

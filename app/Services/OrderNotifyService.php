@@ -13,6 +13,8 @@ class OrderNotifyService
 {
     public function notify(Order $order): void
     {
+        if (!config('v2board.telegram_bot_order_notify', 0))
+        return;
         // type
         $types = [1 => "新购", 2 => "续费", 3 => "变更", 4 => "流量包", 5 => "兑换", 6 => "推广赠送"];
         $type = $types[$order->type] ?? "未知";
