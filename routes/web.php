@@ -3,28 +3,30 @@
 use App\Services\ThemeService;
 use Illuminate\Http\Request;
 
-Route::get('/', function (Request $request) {
-    if (config('v2board.app_url') && config('v2board.safe_mode_enable', 0)) {
-        if ($request->server('HTTP_HOST') !== parse_url(config('v2board.app_url'))['host']) {
-            abort(403);
+if (config('v2board.disable_theme', 0) == 0) {
+    Route::get('/', function (Request $request) {
+        if (config('v2board.app_url') && config('v2board.safe_mode_enable', 0)) {
+            if ($request->server('HTTP_HOST') !== parse_url(config('v2board.app_url'))['host']) {
+                abort(403);
+            }
         }
-    }
-    $renderParams = [
-        'title' => config('v2board.app_name', 'V2Board'),
-        'theme' => config('v2board.frontend_theme', 'default'),
-        'version' => config('app.version'),
-        'description' => config('v2board.app_description', 'V2Board is best'),
-        'logo' => config('v2board.logo')
-    ];
+        $renderParams = [
+            'title' => config('v2board.app_name', 'V2Board'),
+            'theme' => config('v2board.frontend_theme', 'default'),
+            'version' => config('app.version'),
+            'description' => config('v2board.app_description', 'V2Board is best'),
+            'logo' => config('v2board.logo')
+        ];
 
-    if (!config("theme.{$renderParams['theme']}")) {
-        $themeService = new ThemeService($renderParams['theme']);
-        $themeService->init();
-    }
+        if (!config("theme.{$renderParams['theme']}")) {
+            $themeService = new ThemeService($renderParams['theme']);
+            $themeService->init();
+        }
 
-    $renderParams['theme_config'] = config('theme.' . config('v2board.frontend_theme', 'default'));
-    return view('theme::' . config('v2board.frontend_theme', 'default') . '.dashboard', $renderParams);
-});
+        $renderParams['theme_config'] = config('theme.' . config('v2board.frontend_theme', 'default'));
+        return view('theme::' . config('v2board.frontend_theme', 'default') . '.dashboard', $renderParams);
+    });
+}
 
 Route::get('/' . config('v2board.secure_path', config('v2board.frontend_admin_path', hash('crc32b', config('app.key')))), function (Request $request) {
     $host = $request->header('x-forwarded-host', $request->server('HTTP_HOST'));

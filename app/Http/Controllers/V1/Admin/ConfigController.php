@@ -97,6 +97,7 @@ class ConfigController extends Controller
             'site' => [
                 'logo' => config('v2board.logo'),
                 'force_https' => (int)config('v2board.force_https', 0),
+                'disable_theme' => (int)config('v2board.disable_theme', 0),
                 'stop_register' => (int)config('v2board.stop_register', 0),
                 'app_name' => config('v2board.app_name', 'V2Board'),
                 'app_description' => config('v2board.app_description', 'V2Board is best!'),
