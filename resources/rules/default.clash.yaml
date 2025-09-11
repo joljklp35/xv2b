@@ -6,8 +6,8 @@ log-level: info
 proxies:
 proxy-groups:
   - { name: "🚀 节点选择", type: select, proxies: ["🔯 故障转移","🚄 高速公网"] }
-  - { name: "🔯 故障转移", type: fallback, proxies: [/^(?!.*(?:重置|到期|流量|套餐|官网|订阅|游戏)).*$/], url: "http://google.com", interval: 300 }
-  - { name: "🚄 高速公网", type: url-test, proxies: [/^(?!.*(?:重置|到期|流量|套餐|官网|订阅|游戏)).*$/], url: "http://google.com", interval: 300 }
+  - { name: "🔯 故障转移", type: fallback, proxies: [/^(?!.*(?:重置|到期|流量|套餐|官网|订阅|游戏)).*$/], url: "http://captive.apple.com", interval: 300 }
+  - { name: "🚄 高速公网", type: url-test, proxies: [/^(?!.*(?:重置|到期|流量|套餐|官网|订阅|游戏)).*$/], url: "http://captive.apple.com", interval: 300 }
   - { name: "📺 巴哈姆特", type: select, proxies: ["🚀 节点选择"] }
   - { name: "🎙 Discord", type: select, proxies: ["🚀 节点选择"] }
   - { name: "📘 Facebook", type: select, proxies: ["🚀 节点选择"] }
