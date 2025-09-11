@@ -463,6 +463,7 @@ rules:
  - IP-CIDR,192.35.50.0/24,🍎 苹果服务,no-resolve
  - IP-CIDR,198.183.17.0/24,🍎 苹果服务,no-resolve
  - IP-CIDR,205.180.175.0/24,🍎 苹果服务,no-resolve
+ - DOMAIN-SUFFIX,9527app.site,DIRECT
  - DOMAIN-SUFFIX,13th.tech,DIRECT
  - DOMAIN-SUFFIX,423down.com,DIRECT
  - DOMAIN-SUFFIX,bokecc.com,DIRECT
