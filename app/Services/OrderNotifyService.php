@@ -82,16 +82,16 @@ class OrderNotifyService
         $startOfDayTs = $now->copy()->startOfDay()->timestamp;
         $endOfDayTs   = $now->copy()->endOfDay()->timestamp;
 
-        $todayIncome = Order::whereIn('status', [3, 4])
-            ->whereBetween('created_at', [$startOfDayTs, $endOfDayTs])
+        $todayIncome = Order::whereIn('status', [3])
+            ->whereBetween('paid_at', [$startOfDayTs, $endOfDayTs])
             ->sum('total_amount') / 100;
 
         // 本月
         $startOfMonthTs = $now->copy()->startOfMonth()->timestamp;
         $endOfMonthTs   = $now->copy()->endOfMonth()->timestamp;
 
-        $monthIncome = Order::whereIn('status', [3, 4])
-            ->whereBetween('created_at', [$startOfMonthTs, $endOfMonthTs])
+        $monthIncome = Order::whereIn('status', [3])
+            ->whereBetween('paid_at', [$startOfMonthTs, $endOfMonthTs])
             ->sum('total_amount') / 100;
 
         // message
